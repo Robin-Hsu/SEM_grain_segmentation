@@ -14,6 +14,7 @@ from skimage.feature import multiscale_basic_features, peak_local_max
 from skimage.morphology import disk, erosion, dilation, closing, opening
 from skimage.measure import label, regionprops
 from skimage.segmentation import watershed
+import os
 
 # --------------- VISUALIZATION ----------------
 
@@ -532,14 +533,17 @@ def analyze_grains(labeled_image, scale_factor=1.0):
         'aspect_ratios': np.array(major_axis_lengths) / np.array(minor_axis_lengths)
     }
 
-def save_grain_analysis(grain_data, output_file="grain_analysis.csv"):
+def save_grain_analysis(grain_data, image_filename=None, save_dir=None, output_file="grain_analysis.csv"):
     """
     Save grain analysis data to CSV.
     
     Args:
         grain_data (dict): Dictionary of grain properties
-        output_file (str): Output CSV file path
+        image_filename (str, optional): Original image filename to include in output name
+        save_dir (str, optional): Directory to save the output file
+        output_file (str): Base output CSV file name if image_filename is not provided
     """
+    # Create DataFrame with grain measurements
     grain_df = pd.DataFrame({
         'Area_nm2': grain_data['areas'],
         'Diameter_nm': grain_data['diameters'],
@@ -549,4 +553,20 @@ def save_grain_analysis(grain_data, output_file="grain_analysis.csv"):
         'AspectRatio': grain_data['aspect_ratios'],
         'Eccentricity': grain_data['eccentricities']
     })
-    grain_df.to_csv(output_file, index=False)
+    
+    # Generate output filename based on the input image if provided
+    if image_filename:
+        base_name = os.path.splitext(image_filename)[0]
+        output_file = f"{base_name}_grain_analysis.csv"
+    
+    # Build the full output path
+    if save_dir:
+        output_path = os.path.join(save_dir, output_file)
+    else:
+        output_path = output_file
+    
+    # Save the DataFrame to CSV
+    grain_df.to_csv(output_path, index=False)
+    print(f"Grain analysis saved to: {output_path}")
+    
+    return output_path

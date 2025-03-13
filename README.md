@@ -39,7 +39,7 @@ This project contains tools for processing microscopy images and detecting grain
 
 3. Install the required packages:
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
 
 ## Launch Jupyter Notebook:
