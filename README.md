@@ -20,11 +20,6 @@ This project contains tools for processing microscopy images and detecting grain
    conda activate mini-proj
    ```
 
-4. Launch Jupyter Notebook:
-   ```bash
-   jupyter notebook
-   ```
-
 ### Option 2: Using pip and venv
 
 1. Create a virtual environment:
@@ -47,9 +42,10 @@ This project contains tools for processing microscopy images and detecting grain
    pip install -r requirements.txt
    ```
 
-
-## Running the Notebook
-
+## Launch Jupyter Notebook:
+   ```bash
+   jupyter notebook
+   ```
 1. After setup, open the `preprocess_train.ipynb` file in Jupyter
 2. Make sure your image files (`train_image.tif` and `train_labels.tif`) are in the same directory
 3. Run all cells to process images and train the model
