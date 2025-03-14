@@ -570,3 +570,188 @@ def save_grain_analysis(grain_data, image_filename=None, save_dir=None, output_f
     print(f"Grain analysis saved to: {output_path}")
     
     return output_path
+
+# PDF Report generator for grain analysis
+
+
+from matplotlib.backends.backend_pdf import PdfPages
+from datetime import datetime
+
+def generate_grain_analysis_report(
+    grain_data, 
+    segmentation_image, 
+    original_image=None, 
+    overlay_image=None,
+    image_filename=None, 
+    save_dir=None
+):
+    """
+    Generate a comprehensive PDF report of grain analysis.
+    
+    Args:
+        grain_data (dict): Dictionary of grain properties
+        segmentation_image (ndarray): Segmentation result (labeled image)
+        original_image (ndarray, optional): Original SEM image
+        overlay_image (ndarray, optional): Overlay of segmentation on original
+        image_filename (str, optional): Base filename for the report
+        save_dir (str, optional): Directory to save the report
+        
+    Returns:
+        str: Path to the saved PDF report
+    """
+    # Generate output filename
+    if image_filename:
+        base_name = os.path.splitext(os.path.basename(image_filename))[0]
+        output_file = f"{base_name}_grain_analysis_report.pdf"
+    else:
+        output_file = "grain_analysis_report.pdf"
+    
+    # Build the full output path
+    if save_dir:
+        output_path = os.path.join(save_dir, output_file)
+    else:
+        output_path = output_file
+    
+    # Create the PDF
+    with PdfPages(output_path) as pdf:
+        # Cover page with title and timestamp
+        fig = plt.figure(figsize=(8.5, 11))
+        fig.suptitle("Grain Analysis Report", fontsize=24, y=0.5)
+        subtitle = f"Sample: {base_name if image_filename else 'Unknown'}"
+        fig.text(0.5, 0.45, subtitle, fontsize=16, ha='center')
+        timestamp = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        fig.text(0.5, 0.4, timestamp, fontsize=12, ha='center')
+        plt.axis('off')
+        pdf.savefig(fig)
+        plt.close()
+        
+        # Page 1: Original and Segmentation Images
+        if original_image is not None or overlay_image is not None:
+            fig, axes = plt.subplots(1, 2 if overlay_image is not None else 1, figsize=(8.5, 6))
+            
+            # If there's only one subplot, convert axes to list for consistent indexing
+            if overlay_image is None:
+                axes = [axes]
+            
+            # Add original image
+            if original_image is not None:
+                axes[0].imshow(original_image, cmap='gray')
+                axes[0].set_title("Original SEM Image")
+                axes[0].axis('off')
+            
+            # Add overlay if available
+            if overlay_image is not None:
+                axes[1].imshow(overlay_image)
+                axes[1].set_title("Segmentation Overlay")
+                axes[1].axis('off')
+            
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+        
+        # Page 2: Segmentation Result
+        fig, ax = plt.subplots(1, 1, figsize=(8.5, 8))
+        
+        # Create a random colormap for labeled image
+        rng = np.random.RandomState(0)
+        n_labels = np.max(segmentation_image) + 1
+        colors = np.zeros((n_labels, 3))
+        colors[0] = [0, 0, 0]  # Background is black
+        colors[1:] = rng.rand(n_labels-1, 3)
+        
+        # Display the segmentation
+        ax.imshow(segmentation_image, cmap=plt.cm.colors.ListedColormap(colors))
+        ax.set_title("Grain Segmentation Result")
+        ax.set_xlabel(f"Number of grains: {grain_data['grain_count']}")
+        ax.axis('off')
+        
+        plt.tight_layout()
+        pdf.savefig(fig)
+        plt.close()
+        
+        # Page 3: Summary Statistics Table
+        fig, ax = plt.subplots(figsize=(8.5, 11))
+        ax.axis('off')
+        
+        # Create a summary table
+        summary_data = {
+            "Metric": [
+                "Number of grains",
+                "Average grain area (nm²)",
+                "Average grain diameter (nm)",
+                "Median grain diameter (nm)",
+                "25th percentile diameter (nm)",
+                "75th percentile diameter (nm)",
+                "Min grain diameter (nm)",
+                "Max grain diameter (nm)",
+                "Average aspect ratio"
+            ],
+            "Value": [
+                f"{grain_data['grain_count']}",
+                f"{np.mean(grain_data['areas']):.2f}",
+                f"{np.mean(grain_data['diameters']):.2f}",
+                f"{np.median(grain_data['diameters']):.2f}",
+                f"{np.percentile(grain_data['diameters'], 25):.2f}",
+                f"{np.percentile(grain_data['diameters'], 75):.2f}",
+                f"{np.min(grain_data['diameters']):.2f}",
+                f"{np.max(grain_data['diameters']):.2f}",
+                f"{np.mean(grain_data['aspect_ratios']):.2f}"
+            ]
+        }
+        
+        # Create the table
+        table = ax.table(
+            cellText=[[d, v] for d, v in zip(summary_data["Metric"], summary_data["Value"])],
+            colLabels=["Metric", "Value"],
+            loc='center',
+            cellLoc='left'
+        )
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        table.set_fontsize(12)
+        table.scale(1, 1.5)
+        
+        plt.title("Grain Analysis Summary Statistics", fontsize=16, pad=20)
+        pdf.savefig(fig)
+        plt.close()
+        
+        # Page 4: Histograms and Distribution
+        fig, axs = plt.subplots(2, 2, figsize=(8.5, 11))
+        
+        # 1. Histogram of grain diameters
+        axs[0, 0].hist(grain_data['diameters'], bins=30, edgecolor='black', color='skyblue')
+        axs[0, 0].set_xlabel('Grain Diameter (nm)')
+        axs[0, 0].set_ylabel('Frequency')
+        axs[0, 0].set_title('Grain Size Distribution')
+        axs[0, 0].grid(True, linestyle='--', alpha=0.7)
+        
+        # 2. Box plot of grain diameters
+        bp = axs[0, 1].boxplot(grain_data['diameters'], vert=True, patch_artist=True)
+        for patch in bp['boxes']:
+            patch.set_facecolor('skyblue')
+        axs[0, 1].set_ylabel('Grain Diameter (nm)')
+        axs[0, 1].set_title('Grain Size Quartiles')
+        axs[0, 1].set_xticks([])
+        axs[0, 1].grid(True, linestyle='--', alpha=0.7)
+        
+        # 3. Histogram of grain areas
+        axs[1, 0].hist(grain_data['areas'], bins=30, edgecolor='black', color='lightgreen')
+        axs[1, 0].set_xlabel('Grain Area (nm²)')
+        axs[1, 0].set_ylabel('Frequency')
+        axs[1, 0].set_title('Grain Area Distribution')
+        axs[1, 0].grid(True, linestyle='--', alpha=0.7)
+        
+        # 4. Histogram of aspect ratios
+        axs[1, 1].hist(grain_data['aspect_ratios'], bins=30, edgecolor='black', color='salmon')
+        axs[1, 1].set_xlabel('Aspect Ratio')
+        axs[1, 1].set_ylabel('Frequency')
+        axs[1, 1].set_title('Grain Shape Distribution')
+        axs[1, 1].grid(True, linestyle='--', alpha=0.7)
+        
+        plt.tight_layout()
+        pdf.savefig(fig)
+        plt.close()
+    
+    print(f"Grain analysis report saved to: {output_path}")
+    return output_path
