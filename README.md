@@ -64,6 +64,12 @@ Tools for processing SEM plane-view images and detecting grain boundaries via a 
 
 > The training script will convert labels to (0, 1) automatically.
 
+<p align="center">
+  <img src="docs/media/train_image.jpg" alt="Training SEM image" width="45%"/>
+  <img src="docs/media/train_labels.png" alt="Binary training labels" width="45%"/>
+</p>
+``
+
 ---
 ## Quickstart (Scripts)
 
@@ -121,6 +127,12 @@ This will:
 - `<sample_name>_seg_result.tif` (overlay)
 - `grain_analysis_<sample_name>.pdf` (report)
 - CSVs/plots as implemented in `BSSEM_utils.py`.
+
+<p align="center">
+  <img src="docs/media/overlay_w_scale.png" alt="Training SEM image" />
+  <img src="docs/media/stats.png" alt="Binary training labels" />
+</p>
+``
 
 ---
 ## Configuration & Tunables
