@@ -15,9 +15,9 @@ Tools for processing SEM plane-view images and detecting grain boundaries via a 
 ## Repository Structure
 ```
 .
-├── preprocess_train_CV3.py        # Train the pixel classifier
-├── predict.py                     # Run inference on a test image
-├── postprocess_analysis.py        # Clean prediction and analyze grains
+├── preprocess_train_CV3.ipynb        # Train the pixel classifier
+├── predict.ipynb                     # Run inference on a test image
+├── postprocess_analysis.ipynb        # Clean prediction and analyze grains
 ├── BSSEM_utils.py                 # Utility functions (expected in repo)
 ├── requirements.txt               # Pip environment
 ├── environment.yml                # Conda environment (mini-proj)
