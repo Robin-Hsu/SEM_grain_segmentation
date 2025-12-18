@@ -156,12 +156,6 @@ Place `BSSEM_utils.py` in the repository root or add it to `PYTHONPATH`.
 - **Paths**: Relative paths assume `image_files/<dataset_name>` one level up from the scripts; adjust if your layout differs.
 
 ---
-## License
-Add your preferred license (e.g., MIT) in `LICENSE`.
 
-## Citation
-If this repository helps your work, please cite and/or star the project.
-
----
 ## Acknowledgments
 Thanks to ImageJ/Fiji and the open-source Python ecosystem.
