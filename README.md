@@ -25,7 +25,7 @@ Tools for processing SEM plane-view images and detecting grain boundaries via a 
     └── <dataset_name>/
         ├── train_image.tif        # Training image
         ├── train_labels.tif       # Binary labels (white=GBs, black=grains)
-        ├── <sample_name>_test.tif # Preprocessed test image (created by predict.py)
+        ├── <sample_name>_test.tif # Preprocessed test image (created by predict.ipynb)
         ├── <sample_name>_predict_GBs.tif
         └── <sample_name>_seg_result.tif
 ```
@@ -73,7 +73,7 @@ Tools for processing SEM plane-view images and detecting grain boundaries via a 
 ### 1) Train the Pixel Classifier
 Run the training script (edit paths if needed):
 ```bash
-python preprocess_train_CV3.py
+python preprocess_train_CV3.
 ```
 This will:
 - Load `train_image.tif` and `train_labels.tif`.
@@ -91,13 +91,13 @@ This will:
 - Diagnostic plots (feature maps, heatmaps, importance).
 
 ### 2) Predict Grain Boundaries on a New Image
-Update the variables at the top of `predict.py`:
+Update the variables at the top of `predict.ipynb`:
 - `image_dir` (e.g., `../image_files/AG103-A`)
 - `image_filename` (e.g., `AG103-A-50K-002`)
 
 Then run:
 ```bash
-python predict.py
+python predict.ipynb
 ```
 This will:
 - Load the specified image, grayscale/normalize, optionally flatten background.
@@ -105,12 +105,12 @@ This will:
 - Save a binary prediction: `<sample_name>_predict_GBs.tif` (1 = GBs, 0 = grains/background).
 - Also save `<sample_name>_test.tif` (preprocessed image crop used for prediction).
 
-> If you trained with `preprocess_train_CV3.py`, rename `best_pixel_classifier.joblib` to `simple_pixel_classifier.joblib` **or** edit `predict.py` to load `best_pixel_classifier.joblib`.
+> If you trained with `preprocess_train_CV3.ipynb`, rename `best_pixel_classifier.joblib` to `simple_pixel_classifier.joblib` **or** edit `predict.ipynb` to load `best_pixel_classifier.joblib`.
 
 ### 3) Post-process & Analyze Grains
 Run:
 ```bash
-python postprocess_analysis.py
+python postprocess_analysis.ipynb
 ```
 This will:
 - Remove salt noise and optionally connect broken boundary dots.
@@ -124,16 +124,6 @@ This will:
 - `<sample_name>_seg_result.tif` (overlay)
 - `grain_analysis_<sample_name>.pdf` (report)
 - CSVs/plots as implemented in `BSSEM_utils.py`.
-
----
-## Notebook Workflow (Optional)
-Prefer notebooks? Launch Jupyter:
-```bash
-jupyter notebook
-```
-- Open `preprocess_train.ipynb` to prepare features/labels and train.
-- Open `predict.ipynb` to run inference on a new image.
-- Open `post_process_analysis.ipynb` to clean/segment and analyze.
 
 ---
 ## Configuration & Tunables
