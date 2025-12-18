@@ -1,75 +1,177 @@
-# SEM_grain_segmentation
 
-# Image Processing and Grain Boundary Detection
+# SEM Grain Segmentation (Automated)
 
-This project contains tools for processing microscopy images and detecting grain boundaries using machine learning.
+Tools for processing SEM plane-view images and detecting grain boundaries via a pixel-wise machine learning classifier, followed by robust post-processing and grain statistics reporting.
 
-## Setup Instructions
+---
+## Key Features
+- **ImageJ/Fiji-based labeling workflow** to prepare binary grain-boundary labels.
+- **Feature extraction** using `scikit-image` multiscale basic features.
+- **Random Forest pixel classifier** with stratified cross-validation and grid search.
+- **Prediction pipeline** to generate binary grain-boundary masks from new SEM images.
+- **Post-processing & analysis** to separate touching grains, clean labels, compute statistics, and auto-generate a PDF report.
 
-### Option 1: Using Conda (Recommended)
+---
+## Repository Structure
+```
+.
+├── preprocess_train_CV3.py        # Train the pixel classifier
+├── predict.py                     # Run inference on a test image
+├── postprocess_analysis.py        # Clean prediction and analyze grains
+├── BSSEM_utils.py                 # Utility functions (expected in repo)
+├── requirements.txt               # Pip environment
+├── environment.yml                # Conda environment (mini-proj)
+└── image_files/
+    └── <dataset_name>/
+        ├── train_image.tif        # Training image
+        ├── train_labels.tif       # Binary labels (white=GBs, black=grains)
+        ├── <sample_name>_test.tif # Preprocessed test image (created by predict.py)
+        ├── <sample_name>_predict_GBs.tif
+        └── <sample_name>_seg_result.tif
+```
 
-1. Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 
+---
+## Setup
 
-2. Create the environment from the environment.yml file:
+### Option 1: Conda (Recommended)
+1. Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
+2. Create the environment:
    ```bash
    conda env create -f environment.yml
    ```
-
-3. Activate the environment:
+3. Activate:
    ```bash
    conda activate mini-proj
    ```
 
-### Option 2: Using pip and venv
-
-1. Create a virtual environment:
+### Option 2: venv + pip
+1. Create & activate the venv:
    ```bash
    python -m venv sem_seg
+   # Windows
+   sem_seg\\Scripts\\activate
+   # macOS/Linux
+   source sem_seg/bin/activate
    ```
-
-2. Activate the virtual environment:
-   - On Windows:
-     ```bash
-     sem_seg\Scripts\activate
-     ```
-   - On macOS/Linux:
-     ```bash
-     source sem_seg/bin/activate
-     ```
-
-3. Install the required packages:
+2. Install requirements:
    ```bash
    python -m pip install -r requirements.txt
    ```
 
-## Launch Jupyter Notebook:
-   ```bash
-   jupyter notebook
-   ```
-1. After setup, open the `preprocess_train.ipynb` file in Jupyter
-2. Make sure your image files (`train_image.tif` and `train_labels.tif`) are in the same directory
-3. Run all cells to process images and train the model
+---
+## Data Preparation (ImageJ/Fiji)
+1. Open your SEM plane-view image.
+2. **Delineate grain boundaries** with a white brush (value 255).
+3. Apply threshold/contrast so background grains become black (value 0).
+4. Save as `train_labels.tif`. Save the original (or flattened) image as `train_image.tif`.
 
-## Files Description
+> The training script will convert labels to (0, 1) automatically.
 
-- `preprocess_train.ipynb` - Jupyter notebook containing image preprocessing and model training code
-- `best_pixel_classifier.joblib` - Trained Random Forest classifier model
-- `environment.yml` - Conda environment specification
-- `requirements.txt` - Pip requirements file
+---
+## Quickstart (Scripts)
 
-I. Training the pixel classifier
-Most important thing is to creat label files for training.
+### 1) Train the Pixel Classifier
+Run the training script (edit paths if needed):
+```bash
+python preprocess_train_CV3.py
+```
+This will:
+- Load `train_image.tif` and `train_labels.tif`.
+- Extract multiscale intensity/texture/edge features.
+- Fit a **Random Forest** with stratified 3-fold cross-validation (`GridSearchCV`).
+- Save the best model as `best_pixel_classifier.joblib`.
+- Show feature importance and example predictions.
 
-Option 1: Using ImageJ/Fiji
-draw the grain boundaries with white color (value 255), then you can change contrast and tune the threshold to turn the gray background (value 0) completely to black. Then we get a binary train label file.
-The training script will turn it into (0,1) binary label automatically.
+**Inputs**
+- `image_files/<dataset>/train_image.tif`
+- `image_files/<dataset>/train_labels.tif`
 
-II. Predict using the pre-trained model
-in predict notebook, change the test image file path to the image you want to test on
-then run all codes, it will generate a file "predict_GBs", this is a binary image (0 - black background grain area, 1 - white grain boundaries ) 
-so it may seems total black, but it's fine
+**Outputs**
+- `best_pixel_classifier.joblib` in the repository root.
+- Diagnostic plots (feature maps, heatmaps, importance).
 
-III. Post processing and analysis
-in the postprocess_analysis notebook, change the test image and prediction image(generated in last step) file paths.
-then run all codes, it will save a segmentation_result image, and grain diameter list csv file,
-the grain size histogram will also be presented, but you may need to save it manually.
+### 2) Predict Grain Boundaries on a New Image
+Update the variables at the top of `predict.py`:
+- `image_dir` (e.g., `../image_files/AG103-A`)
+- `image_filename` (e.g., `AG103-A-50K-002`)
+
+Then run:
+```bash
+python predict.py
+```
+This will:
+- Load the specified image, grayscale/normalize, optionally flatten background.
+- Extract features and load the classifier.
+- Save a binary prediction: `<sample_name>_predict_GBs.tif` (1 = GBs, 0 = grains/background).
+- Also save `<sample_name>_test.tif` (preprocessed image crop used for prediction).
+
+> If you trained with `preprocess_train_CV3.py`, rename `best_pixel_classifier.joblib` to `simple_pixel_classifier.joblib` **or** edit `predict.py` to load `best_pixel_classifier.joblib`.
+
+### 3) Post-process & Analyze Grains
+Run:
+```bash
+python postprocess_analysis.py
+```
+This will:
+- Remove salt noise and optionally connect broken boundary dots.
+- Invert to grain regions and separate touching grains (distance map + watershed).
+- Fill holes, remove small objects, and clear border artifacts.
+- Compute grain statistics (area, axes, aspect ratio), plot distributions.
+- Create an overlay on the original image with a simple scale bar.
+- Save a PDF report with all statistics and figures.
+
+**Outputs**
+- `<sample_name>_seg_result.tif` (overlay)
+- `grain_analysis_<sample_name>.pdf` (report)
+- CSVs/plots as implemented in `BSSEM_utils.py`.
+
+---
+## Notebook Workflow (Optional)
+Prefer notebooks? Launch Jupyter:
+```bash
+jupyter notebook
+```
+- Open `preprocess_train.ipynb` to prepare features/labels and train.
+- Open `predict.ipynb` to run inference on a new image.
+- Open `post_process_analysis.ipynb` to clean/segment and analyze.
+
+---
+## Configuration & Tunables
+- **Scale factor**: `SCALE_FACTOR` (pixel/nm) — update to match your microscope calibration.
+- **Background removal**: structuring element size (`selem_size`) and Gaussian `sigma`.
+- **Watershed separation**: `min_distance`, number of erosions.
+- **Cleaning**: opening radius, `min_size`, `max_hole_size`.
+- **File paths**: `image_dir`, `image_filename` at the top of scripts.
+
+---
+## Dependencies
+Core libraries:
+- `numpy`, `scikit-image`, `scikit-learn`, `matplotlib`, `joblib`, `pandas`, `opencv-python` (for some utilities), `scipy`.
+Install via `environment.yml` (conda) or `requirements.txt` (pip).
+
+---
+## BSSEM_utils
+`postprocess_analysis.py` expects a `BSSEM_utils.py` module providing functions such as:
+- `apply_opening`, `connect_boundary_dots`, `separate_touching`,
+- `fill_grain_holes`, `remove_small_objects`, `visualize_labeled`,
+- `analyze_grains`, `save_grain_analysis`, `visualize_grain_statistics`,
+- `visualize_overlay`, `add_simple_scale_bar`, `generate_grain_analysis_report`.
+Place `BSSEM_utils.py` in the repository root or add it to `PYTHONPATH`.
+
+---
+## Tips & Troubleshooting
+- **Model file name mismatch**: If prediction script looks for `simple_pixel_classifier.joblib` but your training saved `best_pixel_classifier.joblib`, rename or edit the loader.
+- **All-black prediction image**: This is expected—GBs are sparse white pixels/lines on a black background. Inspect with contrast stretching or overlay visualization.
+- **Class imbalance**: Labels with few GB pixels are imbalanced; the training script uses class weights. Consider annotating additional regions.
+- **Paths**: Relative paths assume `image_files/<dataset_name>` one level up from the scripts; adjust if your layout differs.
+
+---
+## License
+Add your preferred license (e.g., MIT) in `LICENSE`.
+
+## Citation
+If this repository helps your work, please cite and/or star the project.
+
+---
+## Acknowledgments
+Thanks to ImageJ/Fiji and the open-source Python ecosystem.
