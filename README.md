@@ -35,12 +35,9 @@ Tools for processing SEM plane-view images and detecting grain boundaries via a 
 
 ### Option 1: Conda (Recommended)
 1. Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
-2. Create the environment:
+2. Create the environment and activate
    ```bash
    conda env create -f environment.yml
-   ```
-3. Activate:
-   ```bash
    conda activate mini-proj
    ```
 
