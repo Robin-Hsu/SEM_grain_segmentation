@@ -1,10 +1,20 @@
-numpy
-matplotlib
-scikit-image
-scikit-learn
-tqdm
-joblib
-jupyter
-ipykernel
-scipy
-pandas
+# core
+numpy==1.23.5
+scipy==1.9.3
+pandas==2.0.0
+joblib==1.2.0
+
+# ML
+scikit-learn==1.7.2
+
+# image processing
+# Pillow is a scikit-image transitive dep but declared here because BSSEM_utils.py imports it directly
+scikit-image==0.24.0
+matplotlib==3.10.0
+Pillow==9.3.0
+
+# UI (notebooks + Streamlit app)
+streamlit==1.56.0
+jupyter==1.0.0
+ipykernel==6.22.0
+tqdm==4.65.0

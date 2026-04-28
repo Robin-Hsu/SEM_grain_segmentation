@@ -6,7 +6,8 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import cv2
+import matplotlib.font_manager as _fm
+from PIL import Image, ImageDraw, ImageFont
 from skimage.io import imread, imsave
 from skimage import feature, morphology, util
 from scipy import ndimage as ndi
@@ -184,36 +185,32 @@ def add_simple_scale_bar(image, scale_factor=0.603, bar_length_nm=500):
     x_end = width - margin
     y_pos = height - margin - bar_height
     
-    # Place white scale bar
-    if len(img_with_bar.shape) == 3:  # RGB image
+    # Place white scale bar; convert grayscale to RGB before text rendering
+    if len(img_with_bar.shape) == 3:
         img_with_bar[y_pos:y_pos+bar_height, x_start:x_end] = [255, 255, 255]
-        text_color = (255, 255, 255)
-    else:  # Grayscale image
+    else:
         img_with_bar[y_pos:y_pos+bar_height, x_start:x_end] = 255
-        text_color = 255
-    
-    # Add text using OpenCV
-    if len(img_with_bar.shape) == 2:
-        img_with_bar = cv2.cvtColor(img_with_bar, cv2.COLOR_GRAY2BGR)
-    
-    # Text position
-    text_x = x_start + bar_length_px // 2
-    text_y = y_pos - 5
-    
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = max(0.5, height / 1000)
+        img_with_bar = np.stack([img_with_bar] * 3, axis=-1)
+
+    # Add text using Pillow; DejaVu Sans is bundled with matplotlib (cross-platform)
     text = f"{bar_length_nm} nm"
-    
-    # Add black outline for visibility
-    cv2.putText(img_with_bar, text, (text_x-1, text_y-1), font, font_scale, (0,0,0), 2, cv2.LINE_AA)
-    cv2.putText(img_with_bar, text, (text_x+1, text_y-1), font, font_scale, (0,0,0), 2, cv2.LINE_AA)
-    cv2.putText(img_with_bar, text, (text_x-1, text_y+1), font, font_scale, (0,0,0), 2, cv2.LINE_AA)
-    cv2.putText(img_with_bar, text, (text_x+1, text_y+1), font, font_scale, (0,0,0), 2, cv2.LINE_AA)
-    
-    # Add white text
-    cv2.putText(img_with_bar, text, (text_x, text_y), font, font_scale, (255,255,255), 1, cv2.LINE_AA)
-    
-    return img_with_bar
+    font_size = max(12, int(height / 50))
+    font_path = _fm.findfont(_fm.FontProperties(family='DejaVu Sans'))
+    pil_font = ImageFont.truetype(font_path, font_size)
+
+    pil_img = Image.fromarray(img_with_bar.astype(np.uint8))
+    draw = ImageDraw.Draw(pil_img)
+    # anchor='mb': text is centered horizontally, baseline sits at text_y
+    draw.text(
+        (x_start + bar_length_px // 2, y_pos - 5),
+        text,
+        font=pil_font,
+        fill=(255, 255, 255),
+        stroke_width=2,
+        stroke_fill=(0, 0, 0),
+        anchor='mb',
+    )
+    return np.array(pil_img)
 
 
 # --------------- MORPHOLOGICAL OPERATIONS ----------------
