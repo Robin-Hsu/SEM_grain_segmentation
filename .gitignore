@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Pipeline outputs (regenerate with inference_pipeline.py)
+predict_GBs.tif
+segmentation_result_with_scalebar.tif
+intermediate_*.tif
+grain_analysis.csv
+grain_size_histogram.png
