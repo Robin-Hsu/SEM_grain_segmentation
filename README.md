@@ -1,79 +1,154 @@
-# SEM_grain_segmentation
+# SEM Grain Segmentation
 
-# Image Processing and Grain Boundary Detection
+Automated grain boundary detection and size analysis for SEM images, using a trained Random Forest pixel classifier. Includes a Streamlit web app for interactive use and Jupyter notebooks for training and exploratory analysis.
 
-This project contains tools for processing microscopy images and detecting grain boundaries using machine learning.
+---
 
-## Setup Instructions
+## Quick Start — Streamlit App
 
-### Option 1: Using Conda (Recommended)
+The app lets you upload any SEM `.tif`, tune all pipeline parameters interactively, inspect diagnostic intermediate images, and download a PDF report, CSV data, and a JSON parameter file for reproducibility.
 
-1. Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 
+```bash
+# 1. Create and activate the virtual environment
+python -m venv .sem_seg
+source .sem_seg/bin/activate        # macOS / Linux
+# .sem_seg\Scripts\activate         # Windows
 
-2. Create the environment from the environment.yml file:
-   ```bash
-   conda env create -f environment.yml
-   ```
+# 2. Install dependencies
+pip install -r requirements.txt
 
-3. Activate the environment:
-   ```bash
-   conda activate mini-proj
-   ```
+# 3. Launch the app
+streamlit run app.py
+```
 
-4. Launch Jupyter Notebook:
-   ```bash
-   jupyter notebook
-   ```
+Then open the URL printed in the terminal (usually `http://localhost:8501`).
 
-### Option 2: Using pip and venv
+> **Note:** `best_pixel_classifier.joblib` must be present in the project directory (it is excluded from git due to file size — obtain it separately or train your own; see below).
 
-1. Create a virtual environment:
-   ```bash
-   python -m venv sem_seg
-   ```
+---
 
-2. Activate the virtual environment:
-   - On Windows:
-     ```bash
-     sem_seg\Scripts\activate
-     ```
-   - On macOS/Linux:
-     ```bash
-     source sem_seg/bin/activate
-     ```
+## Setup
 
-3. Install the required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Option A — pip + venv (recommended for the app)
 
+```bash
+python -m venv .sem_seg
+source .sem_seg/bin/activate        # macOS / Linux
+pip install -r requirements.txt
+```
 
-## Running the Notebook
+### Option B — Conda (recommended for the notebooks)
 
-1. After setup, open the `preprocess_train.ipynb` file in Jupyter
-2. Make sure your image files (`train_image.tif` and `train_labels.tif`) are in the same directory
-3. Run all cells to process images and train the model
+```bash
+conda env create -f environment.yml
+conda activate mini-proj
+jupyter notebook
+```
 
-## Files Description
+Key dependencies: `scikit-image`, `scikit-learn`, `scipy`, `opencv-python`, `joblib`, `pandas`, `numpy`, `matplotlib`, `streamlit`, `Pillow`.
 
-- `preprocess_train.ipynb` - Jupyter notebook containing image preprocessing and model training code
-- `best_pixel_classifier.joblib` - Trained Random Forest classifier model
-- `environment.yml` - Conda environment specification
-- `requirements.txt` - Pip requirements file
+---
 
-I. Training the pixel classifier
-Most important thing is to creat label files for training.
+## Streamlit App (`app.py`)
 
-Option 1: Using ImageJ/Fiji
-draw the grain boundaries with white color (value 255), then you can change contrast and tune the threshold to turn the gray background (value 0) completely to black. Then we get a binary train label file.
-The training script will turn it into (0,1) binary label automatically.
+### Features
 
-II. Predict using the pre-trained model
-in predict notebook, change the test image file path to the image you want to test on
-then run all codes, it will generate a file "predict_GBs", this is a binary image (0 - black background grain area, 1 - white grain boundaries ) 
-so it may seems total black, but it's fine
+- **Upload** any SEM `.tif` image (RGB or grayscale)
+- **Tune parameters** in the sidebar with tooltips explaining each knob
+- **Cached RF prediction** — changing only postprocessing params reruns the fast steps without re-running the classifier
+- **Diagnostic mode** — toggle to reveal 8 intermediate images showing the effect of each parameter group at every pipeline stage
+- **Grain statistics** — grain count, mean/std/median diameter, summary table, diameter and area histograms
+- **Downloads:**
+  - `*_grain_report.pdf` — 4-page report: overlay image, size distributions, statistics table, full parameter list
+  - `*_grain_analysis.csv` — per-grain measurements (area, diameter, perimeter, aspect ratio, eccentricity)
+  - `*_params.json` — all parameters + results summary for exact reproducibility
 
-III. Post processing and analysis
-in the postprocess_analysis notebook, change the test image and prediction image(generated in last step) file paths.
-then run all codes, it will save a segmentation_result image, and grain diameter list csv file,
-the grain size histogram will also be presented, but you may need to save it manually.
+### Sidebar parameters
+
+| Section | Parameter | Effect of increasing |
+|---------|-----------|----------------------|
+| — | Scale factor (px/nm) | Adjusts all reported sizes; calibrate from ImageJ |
+| Preprocessing | Top-hat radius | Removes broader background gradients; must exceed grain diameter |
+| Preprocessing | Contrast clip % | Clips intensity outliers; helps cross-session normalization (try 1–2) |
+| Preprocessing | Gaussian sigma | More smoothing, fewer spurious boundaries; may blur fine boundaries |
+| Cleaning | Opening radius | Removes more speckle noise; may break thin boundaries |
+| Cleaning | Line length | Bridges longer boundary gaps |
+| Watershed | Min seed distance | Fewer splits; merges touching grains |
+| Watershed | Erosion passes | Wider boundary lines, cleaner grain separation |
+| Filtering | Min object size | Discards smaller grain fragments |
+| Filtering | Max hole size | Fills larger internal voids |
+
+### Command-line usage
+
+```bash
+python inference_pipeline.py image.tif outputs/ \
+    --scale-factor 0.603 \
+    --tophat-radius 50 \
+    --gaussian-sigma 2 \
+    --watershed-min-distance 40 \
+    --save-intermediates
+```
+
+Run `python inference_pipeline.py --help` for all options.
+
+---
+
+## Notebook Pipeline
+
+Three notebooks form the original training-and-analysis workflow.
+
+### Stage 1 — Train (`preprocess_train.ipynb`)
+
+1. Load `train_image.tif` → convert to grayscale
+2. White top-hat (disk radius 50) to remove background brightness gradient
+3. CLAHE contrast enhancement + Gaussian denoise
+4. Extract multiscale features (`sigma_min=1`, `sigma_max=10`, intensity + texture + edges)
+5. Load `train_labels.tif` (white=255 → boundary label 1, black=0 → grain label 0)
+6. Train `RandomForestClassifier` with `GridSearchCV` (balanced class weights, 3-fold CV)
+7. Save best model → `best_pixel_classifier.joblib`
+
+**Creating training labels in ImageJ/Fiji:**
+Draw grain boundaries with white (value 255). Adjust contrast and threshold so the grain interior becomes fully black (value 0). This binary image is your `train_labels.tif`. The training script converts it to 0/1 labels automatically.
+
+### Stage 2 — Predict (`predict.ipynb`)
+
+1. Set `test_image_path` at the top of the notebook
+2. Apply identical preprocessing as training
+3. Load `best_pixel_classifier.joblib` and predict pixel labels
+4. Save binary prediction → `predict_GBs.tif` (0 = grain interior, 1 = boundary; appears nearly black when viewed directly — this is expected)
+
+### Stage 3 — Postprocess & Analyse (`postprocess_analysis.ipynb`)
+
+1. Load `train_image.tif` and `predict_GBs.tif` (update paths at the top)
+2. Morphological opening to remove salt noise
+3. Optional: connect dotted boundaries
+4. Watershed grain separation
+5. Fill internal holes, remove border-touching grains, label
+6. Run `analyze_grains(scale_factor=0.603)`
+7. Save: `segmentation_result_with_scalebar.tif`, `grain_analysis.csv`
+
+---
+
+## Repository Structure
+
+```
+├── app.py                        # Streamlit web app
+├── inference_pipeline.py         # Reusable pipeline (importable + CLI)
+├── BSSEM_utils.py                # Shared utility functions
+├── preprocess_train.ipynb        # Stage 1: training
+├── predict.ipynb                 # Stage 2: prediction
+├── postprocess_analysis.ipynb    # Stage 3: postprocessing & analysis
+├── requirements.txt              # pip dependencies
+├── environment.yml               # Conda environment
+└── CLAUDE.md                     # AI assistant guidance
+```
+
+> `best_pixel_classifier.joblib` and all `.tif` images are excluded from git (file size). Store them separately or use Git LFS.
+
+---
+
+## Key Constants
+
+- `SCALE_FACTOR = 0.603` px/nm — calibrated from ImageJ; update for different SEM sessions
+- Grain boundary convention: 0 = grain interior, 1 = boundary
+- `sigma_min=1`, `sigma_max=10` for multiscale features — fixed; changing these requires retraining

@@ -29,6 +29,7 @@ DEFAULTS = dict(
     model_path="best_pixel_classifier.joblib",
     # preprocessing
     tophat_radius=50,           # disk radius for background removal (px)
+    contrast_clip_pct=0.0,      # percentile clipped from each end before rescaling (0 = min/max)
     gaussian_sigma=2,           # Gaussian denoise strength
     # feature extraction — must match training settings
     sigma_min=1,
@@ -45,8 +46,13 @@ DEFAULTS = dict(
     scale_factor=0.603,         # px/nm, calibrated from ImageJ
     scale_bar_length_nm=500,    # physical length shown on the scale bar (nm)
     # diagnostics
-    save_intermediates=False,   # save preprocessed/raw-boundary/postprocessed TIFs to output_dir
+    save_intermediates=False,   # save intermediate TIFs to output_dir
 )
+
+
+def load_model(model_path):
+    """Load a trained pixel classifier from disk."""
+    return joblib.load(str(model_path))
 
 
 def load_image(image_path):
@@ -57,16 +63,24 @@ def load_image(image_path):
     return image
 
 
-def preprocess(image, tophat_radius=50, gaussian_sigma=2):
+def preprocess(image, tophat_radius=50, contrast_clip_pct=0.0, gaussian_sigma=2):
     """Remove background brightness gradient, rescale contrast, and denoise."""
     image = white_tophat(image, disk(tophat_radius))
-    image = exposure.rescale_intensity(image)
+    if contrast_clip_pct > 0:
+        p_lo, p_hi = np.percentile(image, [contrast_clip_pct, 100 - contrast_clip_pct])
+        image = exposure.rescale_intensity(image, in_range=(p_lo, p_hi))
+    else:
+        image = exposure.rescale_intensity(image)
     image = filters.gaussian(image, sigma=gaussian_sigma)
     return image
 
 
-def predict_boundaries(image_processed, model_path, sigma_min=1, sigma_max=10):
-    """Extract multiscale features and classify each pixel as grain (0) or boundary (1)."""
+def predict_boundaries(image_processed, model_or_path, sigma_min=1, sigma_max=10):
+    """
+    Extract multiscale features and classify each pixel as grain (0) or boundary (1).
+
+    model_or_path: a loaded sklearn classifier, or a str/Path pointing to a .joblib file.
+    """
     feats = multiscale_basic_features(
         image=image_processed,
         intensity=True,
@@ -76,29 +90,44 @@ def predict_boundaries(image_processed, model_path, sigma_min=1, sigma_max=10):
         sigma_max=sigma_max,
         channel_axis=None,
     )
-    classifier = joblib.load(str(model_path))
+    if isinstance(model_or_path, (str, Path)):
+        classifier = joblib.load(str(model_or_path))
+    else:
+        classifier = model_or_path
     predicted = classifier.predict(feats.reshape(-1, feats.shape[2]))
     return predicted.reshape(image_processed.shape).astype(np.uint8)
 
 
 def postprocess(boundary_mask, opening_radius=3, connect_dots=True, line_length=5,
                 min_object_size=50, watershed_min_distance=40, watershed_erosions=2,
-                max_hole_size=2000):
+                max_hole_size=2000, _intermediates=None):
     """
     Convert a raw boundary prediction into a labeled grain image.
 
     Steps: salt removal → optional gap bridging → invert → watershed separation
     → hole fill → border-touching grain removal → integer labeling.
+
+    _intermediates: if a dict is passed, it is populated with arrays keyed by
+        'after_opening', 'after_connect_dots', 'after_watershed'.
     """
     cleaned = BSSEM_utils.apply_opening(boundary_mask, opening_radius)
+    if _intermediates is not None:
+        _intermediates['after_opening'] = cleaned.copy()
+
     if connect_dots:
         cleaned = BSSEM_utils.connect_boundary_dots(
             cleaned, line_length=line_length, min_size=min_object_size
         )
-    grain_mask = 1 - cleaned
+    if _intermediates is not None:
+        _intermediates['after_connect_dots'] = np.asarray(cleaned, dtype=np.uint8)
+
+    grain_mask = 1 - np.asarray(cleaned, dtype=np.uint8)
     separated, _, _ = BSSEM_utils.separate_touching(
         grain_mask, min_distance=watershed_min_distance, num_erosions=watershed_erosions
     )
+    if _intermediates is not None:
+        _intermediates['after_watershed'] = np.asarray(separated, dtype=np.uint8)
+
     filled = BSSEM_utils.fill_grain_holes(separated, max_hole_size=max_hole_size)
     return segmentation.clear_border(label(filled))
 
@@ -204,15 +233,15 @@ def _save_grain_histogram(grain_data, save_path):
     plt.close(fig)
 
 
-def run_pipeline(image_path, output_dir, **params):
+def run_pipeline(image_path, output_dir, progress_callback=None, **params):
     """
     Run the full SEM grain segmentation pipeline end-to-end.
 
     Args:
         image_path: Path to the input SEM image (.tif).
         output_dir: Directory where all outputs are written.
-        **params: Override any value from DEFAULTS (e.g. scale_factor=0.75,
-                  model_path='other.joblib', connect_dots=False).
+        progress_callback: optional callable(message: str, fraction: float 0–1).
+        **params: Override any value from DEFAULTS (e.g. scale_factor=0.75).
 
     Returns:
         dict with keys:
@@ -220,24 +249,41 @@ def run_pipeline(image_path, output_dir, **params):
             overlay_image   -- uint8 RGB ndarray with colored overlay and scale bar
             boundary_mask   -- uint8 ndarray of raw classifier output (0=grain, 1=boundary)
     """
+    def _cb(msg, frac):
+        if progress_callback:
+            progress_callback(msg, frac)
+
     p = {**DEFAULTS, **params}
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    _cb("Loading image...", 0.05)
     image_raw = load_image(image_path)
+
+    if p['save_intermediates']:
+        tophat_only = white_tophat(image_raw, disk(p['tophat_radius']))
+        imsave(str(output_dir / 'intermediate_tophat.tif'), tophat_only.astype(np.float32))
+
+    _cb("Preprocessing...", 0.15)
     image_processed = preprocess(
         image_raw, tophat_radius=p['tophat_radius'], gaussian_sigma=p['gaussian_sigma']
     )
     if p['save_intermediates']:
         imsave(str(output_dir / 'intermediate_preprocessed.tif'), image_processed.astype(np.float32))
 
+    _cb("Loading model...", 0.22)
+    model = load_model(p['model_path'])
+
+    _cb("Running classifier (this may take 1–2 minutes)...", 0.25)
     boundary_mask = predict_boundaries(
-        image_processed, p['model_path'],
+        image_processed, model,
         sigma_min=p['sigma_min'], sigma_max=p['sigma_max'],
     )
     if p['save_intermediates']:
         imsave(str(output_dir / 'intermediate_boundary_raw.tif'), (boundary_mask * 255).astype(np.uint8))
 
+    _cb("Postprocessing...", 0.75)
+    intermediates = {} if p['save_intermediates'] else None
     final_labels = postprocess(
         boundary_mask,
         opening_radius=p['opening_radius'],
@@ -247,12 +293,16 @@ def run_pipeline(image_path, output_dir, **params):
         watershed_min_distance=p['watershed_min_distance'],
         watershed_erosions=p['watershed_erosions'],
         max_hole_size=p['max_hole_size'],
+        _intermediates=intermediates,
     )
-    if p['save_intermediates']:
+    if p['save_intermediates'] and intermediates:
+        for name, arr in intermediates.items():
+            imsave(str(output_dir / f'intermediate_{name}.tif'), (np.asarray(arr) * 255).astype(np.uint8))
         n = max(int(final_labels.max()), 1)
         imsave(str(output_dir / 'intermediate_postprocessed.tif'),
                ((final_labels / n) * 255).astype(np.uint8))
 
+    _cb("Analyzing grains...", 0.90)
     grain_stats_df, overlay_image = analyze_and_save(
         image_raw, final_labels, output_dir,
         scale_factor=p['scale_factor'],
@@ -260,6 +310,7 @@ def run_pipeline(image_path, output_dir, **params):
     )
 
     imsave(str(output_dir / 'predict_GBs.tif'), boundary_mask)
+    _cb("Done.", 1.0)
 
     return dict(
         grain_stats_df=grain_stats_df,
@@ -276,17 +327,44 @@ if __name__ == '__main__':
                         help='Path to trained .joblib classifier')
     parser.add_argument('--scale-factor', type=float, default=DEFAULTS['scale_factor'],
                         help='Pixel/nm calibration factor (default: 0.603)')
+    parser.add_argument('--scale-bar-length', type=int, dest='scale_bar_length_nm',
+                        default=DEFAULTS['scale_bar_length_nm'])
+    parser.add_argument('--tophat-radius', type=int, dest='tophat_radius',
+                        default=DEFAULTS['tophat_radius'])
+    parser.add_argument('--gaussian-sigma', type=float, dest='gaussian_sigma',
+                        default=DEFAULTS['gaussian_sigma'])
+    parser.add_argument('--opening-radius', type=int, dest='opening_radius',
+                        default=DEFAULTS['opening_radius'])
     parser.add_argument('--no-connect-dots', dest='connect_dots', action='store_false',
                         help='Skip the boundary gap-bridging step')
+    parser.add_argument('--watershed-min-distance', type=int, dest='watershed_min_distance',
+                        default=DEFAULTS['watershed_min_distance'])
+    parser.add_argument('--watershed-erosions', type=int, dest='watershed_erosions',
+                        default=DEFAULTS['watershed_erosions'])
+    parser.add_argument('--max-hole-size', type=int, dest='max_hole_size',
+                        default=DEFAULTS['max_hole_size'])
+    parser.add_argument('--save-intermediates', dest='save_intermediates', action='store_true')
     args = parser.parse_args()
+
+    def _cli_progress(msg, frac):
+        print(f"  [{int(frac * 100):3d}%] {msg}")
 
     results = run_pipeline(
         args.image_path, args.output_dir,
+        progress_callback=_cli_progress,
         model_path=args.model_path,
         scale_factor=args.scale_factor,
+        scale_bar_length_nm=args.scale_bar_length_nm,
+        tophat_radius=args.tophat_radius,
+        gaussian_sigma=args.gaussian_sigma,
+        opening_radius=args.opening_radius,
         connect_dots=args.connect_dots,
+        watershed_min_distance=args.watershed_min_distance,
+        watershed_erosions=args.watershed_erosions,
+        max_hole_size=args.max_hole_size,
+        save_intermediates=args.save_intermediates,
     )
     df = results['grain_stats_df']
-    print(f"Done. {len(df)} grains detected.")
+    print(f"\nDone. {len(df)} grains detected.")
     print(f"Mean diameter:   {df['Diameter_nm'].mean():.1f} nm")
     print(f"Median diameter: {df['Diameter_nm'].median():.1f} nm")
